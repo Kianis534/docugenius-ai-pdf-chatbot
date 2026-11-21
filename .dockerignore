@@ -1,0 +1,17 @@
+.git
+.github
+.private
+.venv
+venv
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+tests
+docs
+data
+*.md
+!README.md
