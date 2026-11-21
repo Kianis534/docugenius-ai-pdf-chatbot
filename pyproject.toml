@@ -1,0 +1,60 @@
+[project]
+name = "docugenius"
+version = "2.0.0"
+description = "AI PDF chatbot and NLP document assistant: RAG with LangChain, ChromaDB and Google Gemini on FastAPI."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Muhammad Abdullah Raja" }]
+requires-python = ">=3.11"
+keywords = ["rag", "chatbot", "pdf", "gemini", "langchain", "chromadb", "fastapi", "nlp", "llm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+]
+dynamic = ["dependencies"]
+
+[project.urls]
+Repository = "https://github.com/Kianis534/docugenius-ai-pdf-chatbot"
+Issues = "https://github.com/Kianis534/docugenius-ai-pdf-chatbot/issues"
+
+[project.scripts]
+docugenius = "docugenius.__main__:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["docugenius", "docugenius.services"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore:Couldn't find ffmpeg:RuntimeWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".private"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "B008",    # FastAPI dependency defaults
+    "RUF001",  # typographic characters in user-facing strings are intentional
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["docugenius"]
