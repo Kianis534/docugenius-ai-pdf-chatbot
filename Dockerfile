@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Builder: install Python dependencies into an isolated virtual environment
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -24,7 +24,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # ---------------------------------------------------------------------------
 # Runtime: slim image, non-root user (UID 1000 also matches Hugging Face Spaces)
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg curl \
