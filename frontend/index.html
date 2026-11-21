@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DocuGenius · AI PDF Chatbot &amp; Document Assistant</title>
+  <meta name="description" content="Chat with your PDFs, get cited answers, summaries and tables, translate text, transcribe audio and analyse Reddit sentiment. Built with FastAPI, LangChain, ChromaDB and Google Gemini." />
+  <meta name="theme-color" content="#4f46e5" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>" />
+
+  <!-- Apply the saved or preferred colour theme before first paint (prevents a flash). -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("docugenius-theme");
+        var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-bs-theme", theme);
+      } catch (e) { /* storage unavailable */ }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <a class="visually-hidden-focusable skip-link" href="#main">Skip to content</a>
+
+  <!-- ============================== Header ============================== -->
+  <header class="app-header sticky-top">
+    <nav class="container d-flex align-items-center gap-2 py-2">
+      <button class="btn btn-icon" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar"
+              aria-controls="sidebar" aria-label="Open menu">
+        <i class="bi bi-list"></i>
+      </button>
+      <a class="brand d-flex align-items-center gap-2 text-decoration-none" href="/">
+        <span class="brand-logo" id="lottie-logo" aria-hidden="true"></span>
+        <span class="brand-name">DocuGenius</span>
+      </a>
+      <span id="statusBadge" class="status-badge ms-2 d-none d-sm-inline-flex" title="Checking service status…">
+        <span class="status-dot"></span><span class="status-text">Connecting…</span>
+      </span>
+      <div class="ms-auto d-flex align-items-center gap-1">
+        <a class="btn btn-icon" href="/docs" target="_blank" rel="noopener" title="Interactive API docs" aria-label="API docs">
+          <i class="bi bi-braces"></i>
+        </a>
+        <button class="btn btn-icon" type="button" id="themeToggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+          <i class="bi bi-moon-stars"></i>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ============================== Sidebar ============================== -->
+  <aside class="offcanvas offcanvas-start sidebar" tabindex="-1" id="sidebar" aria-labelledby="sidebarLabel">
+    <div class="offcanvas-header">
+      <h2 class="offcanvas-title h5 mb-0" id="sidebarLabel">DocuGenius</h2>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body p-0">
+      <nav class="list-group list-group-flush">
+        <button class="sidebar-item" type="button" data-info="architecture"><i class="bi bi-diagram-3"></i>System architecture</button>
+        <button class="sidebar-item" type="button" data-info="guide"><i class="bi bi-book"></i>User guide</button>
+        <button class="sidebar-item" type="button" data-info="faq"><i class="bi bi-question-circle"></i>FAQ</button>
+        <a class="sidebar-item" href="/docs" target="_blank" rel="noopener"><i class="bi bi-braces"></i>REST API (OpenAPI)</a>
+      </nav>
+    </div>
+    <div class="sidebar-footer">DocuGenius v<span id="appVersion">2.0.0</span></div>
+  </aside>
+
+  <!-- ============================== Main ============================== -->
+  <main id="main" class="container pb-5">
+    <section class="hero text-center">
+      <h1 class="hero-title">Chat with your documents</h1>
+      <p class="hero-subtitle">
+        Upload a PDF and get answers with page citations, summaries and tables. You can also translate,
+        transcribe, rewrite and analyse text, powered by Retrieval-Augmented Generation and Google Gemini.
+      </p>
+    </section>
+
+    <div id="configAlert" class="alert alert-warning d-none" role="alert">
+      <i class="bi bi-key me-2"></i>
+      <strong>Gemini is not configured.</strong> Add <code>GOOGLE_API_KEY</code> to your <code>.env</code> file and restart
+      the server to enable AI answers. Ghostwriter (offline engine), table extraction and the sketch pad still work.
+    </div>
+
+    <!-- Upload -->
+    <section class="card tool-card mb-4" aria-labelledby="uploadTitle">
+      <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <h2 class="tool-title" id="uploadTitle"><i class="bi bi-file-earmark-pdf"></i>Your document</h2>
+          <span id="docBadge" class="doc-badge d-none"></span>
+        </div>
+        <label for="pdfUpload" id="dropzone" class="dropzone">
+          <input type="file" id="pdfUpload" accept="application/pdf,.pdf" class="visually-hidden" />
+          <i class="bi bi-cloud-arrow-up dropzone-icon"></i>
+          <span class="dropzone-title">Drop a PDF here or <u>browse</u></span>
+          <span class="dropzone-hint" id="dropzoneHint">Text-based PDFs up to 20 MB</span>
+        </label>
+        <div class="progress mt-3 d-none" id="uploadProgress" role="progressbar" aria-label="Upload progress">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%">Indexing…</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="row g-4">
+      <!-- Ask -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="askTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="askTitle"><i class="bi bi-chat-square-text"></i>Ask your document</h2>
+            <form id="askForm" class="input-group mb-3">
+              <input type="text" id="questionInput" class="form-control" maxlength="2000"
+                     placeholder="e.g. What are the key findings?" aria-label="Question" />
+              <button class="btn btn-primary" type="submit" id="askBtn">Ask</button>
+            </form>
+            <div class="output" id="askOutput" aria-live="polite" data-empty="Answers grounded in your PDF appear here, with page citations."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Summarize -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="summaryTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="summaryTitle"><i class="bi bi-card-text"></i>Summarize</h2>
+            <button class="btn btn-warning w-100 mb-3" type="button" id="summarizeBtn">Summarize document</button>
+            <div class="output" id="summaryOutput" aria-live="polite" data-empty="A structured summary of the whole document."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Tables -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="tablesTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="tablesTitle"><i class="bi bi-table"></i>Extract tables</h2>
+            <button class="btn btn-success w-100 mb-3" type="button" id="tablesBtn">Find tables</button>
+            <div class="output" id="tablesOutput" aria-live="polite" data-empty="Tables detected in the PDF, ready to copy as Markdown."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Ghostwriter -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="ghostTitle">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <h2 class="tool-title" id="ghostTitle"><i class="bi bi-pen"></i>Ghostwriter</h2>
+              <span id="engineBadge" class="engine-badge d-none"></span>
+            </div>
+            <form id="ghostForm">
+              <textarea id="ghostInput" class="form-control mb-2" rows="3" maxlength="5000"
+                        placeholder="Paste text, or select text in any answer to send it here…" aria-label="Text to rewrite"></textarea>
+              <div class="d-flex gap-2 mb-1">
+                <select id="ghostStyle" class="form-select" aria-label="Writing style">
+                  <option value="formal">Formal</option>
+                  <option value="concise">Concise</option>
+                  <option value="casual">Casual</option>
+                  <option value="academic">Academic</option>
+                  <option value="legal">Legal</option>
+                  <option value="technical">Technical</option>
+                  <option value="creative">Creative</option>
+                  <option value="twitter">Social post (280 chars)</option>
+                </select>
+                <select id="ghostEngine" class="form-select engine-select" aria-label="Rewrite engine"
+                        title="Auto uses Gemini when available and falls back to the offline engine">
+                  <option value="auto">Auto</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="rules">Offline</option>
+                </select>
+                <button class="btn btn-primary text-nowrap" type="submit" id="ghostBtn">Rewrite</button>
+              </div>
+              <small class="text-body-secondary" id="ghostCount">0 / 5000</small>
+            </form>
+            <div class="output mt-2" id="ghostOutput" aria-live="polite" data-empty="Your rewritten text appears here."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Translate -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="translateTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="translateTitle"><i class="bi bi-translate"></i>Translate</h2>
+            <form id="translateForm">
+              <textarea id="translateInput" class="form-control mb-2" rows="3" maxlength="10000"
+                        placeholder="Text to translate…" aria-label="Text to translate"></textarea>
+              <div class="d-flex gap-2">
+                <input type="text" id="languageInput" class="form-control" list="languageList" maxlength="50"
+                       placeholder="Target language, e.g. Urdu" aria-label="Target language" />
+                <datalist id="languageList">
+                  <option value="English"></option><option value="Urdu"></option><option value="Arabic"></option>
+                  <option value="Spanish"></option><option value="French"></option><option value="German"></option>
+                  <option value="Chinese (Simplified)"></option><option value="Hindi"></option><option value="Turkish"></option>
+                  <option value="Japanese"></option><option value="Korean"></option><option value="Portuguese"></option>
+                </datalist>
+                <button class="btn btn-info text-nowrap" type="submit" id="translateBtn">Translate</button>
+              </div>
+            </form>
+            <div class="output mt-3" id="translateOutput" aria-live="polite" data-empty="Translations into 100+ languages."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Transcribe -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="transcribeTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="transcribeTitle"><i class="bi bi-mic"></i>Transcribe audio</h2>
+            <form id="transcribeForm">
+              <input type="file" id="audioUpload" class="form-control mb-2" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm" aria-label="Audio file" />
+              <div class="d-flex gap-2">
+                <select id="audioLanguage" class="form-select" aria-label="Spoken language">
+                  <option value="en-US">English (US)</option>
+                  <option value="en-GB">English (UK)</option>
+                  <option value="ur-PK">Urdu</option>
+                  <option value="ar-SA">Arabic</option>
+                  <option value="hi-IN">Hindi</option>
+                  <option value="es-ES">Spanish</option>
+                  <option value="fr-FR">French</option>
+                  <option value="de-DE">German</option>
+                </select>
+                <button class="btn btn-secondary text-nowrap" type="submit" id="transcribeBtn">Transcribe</button>
+              </div>
+            </form>
+            <div class="output mt-3" id="transcribeOutput" aria-live="polite" data-empty="Speech-to-text for WAV, MP3, M4A and more (up to 5 minutes)."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Web search -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="searchTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="searchTitle"><i class="bi bi-globe2"></i>Web search</h2>
+            <form id="searchForm" class="input-group mb-3">
+              <input type="text" id="searchInput" class="form-control" maxlength="500"
+                     placeholder="Ask anything…" aria-label="Search query" />
+              <button class="btn btn-primary" type="submit" id="searchBtn">Search</button>
+            </form>
+            <div class="output" id="searchOutput" aria-live="polite" data-empty="Answers grounded with Google Search when your API tier supports it."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Reddit -->
+      <div class="col-lg-6">
+        <section class="card tool-card h-100" aria-labelledby="redditTitle">
+          <div class="card-body">
+            <h2 class="tool-title" id="redditTitle"><i class="bi bi-reddit"></i>Reddit sentiment</h2>
+            <form id="redditForm">
+              <input type="text" id="redditSubject" class="form-control mb-2" maxlength="100"
+                     placeholder="Topic, e.g. electric cars" aria-label="Topic" />
+              <div class="d-flex gap-2">
+                <select id="redditTime" class="form-select" aria-label="Time range">
+                  <option value="day">Past 24 hours</option>
+                  <option value="week" selected>Past week</option>
+                  <option value="month">Past month</option>
+                  <option value="year">Past year</option>
+                  <option value="all">All time</option>
+                </select>
+                <button class="btn btn-reddit text-nowrap" type="submit" id="redditBtn">Analyze</button>
+              </div>
+            </form>
+            <div class="output mt-3" id="redditOutput" aria-live="polite" data-empty="Sentiment breakdown, top communities, sample posts and AI insights."></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Sketch -->
+      <div class="col-12">
+        <section class="card tool-card" aria-labelledby="sketchTitle">
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h2 class="tool-title mb-0" id="sketchTitle"><i class="bi bi-palette"></i>Sketch assistant</h2>
+              <small class="text-body-secondary">Draw roughly, then press <strong>Clean up</strong> to snap strokes to lines, circles and rectangles.</small>
+            </div>
+            <div class="sketch-toolbar">
+              <div class="btn-group" role="group" aria-label="Drawing tool">
+                <input type="radio" class="btn-check" name="sketchTool" id="toolPen" value="pen" checked />
+                <label class="btn btn-outline-secondary" for="toolPen" title="Pen"><i class="bi bi-pencil"></i></label>
+                <input type="radio" class="btn-check" name="sketchTool" id="toolLine" value="line" />
+                <label class="btn btn-outline-secondary" for="toolLine" title="Line"><i class="bi bi-slash-lg"></i></label>
+                <input type="radio" class="btn-check" name="sketchTool" id="toolRect" value="rectangle" />
+                <label class="btn btn-outline-secondary" for="toolRect" title="Rectangle"><i class="bi bi-square"></i></label>
+                <input type="radio" class="btn-check" name="sketchTool" id="toolCircle" value="circle" />
+                <label class="btn btn-outline-secondary" for="toolCircle" title="Circle"><i class="bi bi-circle"></i></label>
+              </div>
+              <input type="color" id="sketchColor" class="form-control form-control-color" value="#4f46e5" title="Colour" aria-label="Colour" />
+              <input type="range" id="sketchWidth" class="form-range sketch-width" min="1" max="12" value="3" aria-label="Stroke width" />
+              <div class="btn-group" role="group" aria-label="History">
+                <button class="btn btn-outline-secondary" type="button" id="undoBtn" title="Undo (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
+                <button class="btn btn-outline-secondary" type="button" id="redoBtn" title="Redo (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
+              </div>
+              <button class="btn btn-warning" type="button" id="cleanBtn"><i class="bi bi-magic me-1"></i>Clean up</button>
+              <button class="btn btn-outline-secondary" type="button" id="saveSketchBtn" title="Download PNG"><i class="bi bi-download"></i></button>
+              <button class="btn btn-outline-danger" type="button" id="clearSketchBtn" title="Clear canvas"><i class="bi bi-trash"></i></button>
+            </div>
+            <canvas id="sketchCanvas" class="sketch-canvas" aria-label="Drawing canvas" role="img"></canvas>
+            <div class="small text-body-secondary mt-2" id="sketchStatus" aria-live="polite"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container d-flex flex-wrap justify-content-between gap-2">
+      <span>DocuGenius by <strong>Muhammad Abdullah Raja</strong></span>
+      <span>FastAPI · LangChain · ChromaDB · Sentence-Transformers · Google Gemini</span>
+    </div>
+  </footer>
+
+  <!-- ============================== Chat widget ============================== -->
+  <section class="chat-widget" id="chatWidget" aria-label="DocuGenius chat">
+    <button class="chat-header" type="button" id="chatToggle" aria-expanded="false" aria-controls="chatBody">
+      <span class="chat-avatar"><i class="bi bi-robot"></i></span>
+      <span class="chat-heading">
+        <span class="chat-name">DocuGenius AI</span>
+        <span class="chat-mode" id="chatMode">General assistant</span>
+      </span>
+      <i class="bi bi-chevron-up chat-chevron"></i>
+    </button>
+    <div class="chat-body" id="chatBody">
+      <div class="chat-messages" id="chatMessages" aria-live="polite">
+        <div class="chat-message bot">Hi! Ask me anything. Once you upload a PDF, I'll answer from it and cite the pages.</div>
+      </div>
+      <form class="chat-input" id="chatForm">
+        <input type="text" id="chatInput" placeholder="Type a message…" maxlength="2000" autocomplete="off" aria-label="Message" />
+        <button type="submit" aria-label="Send"><i class="bi bi-send-fill"></i></button>
+      </form>
+    </div>
+  </section>
+
+  <button class="btn btn-primary scroll-top" type="button" id="scrollTop" aria-label="Back to top"><i class="bi bi-arrow-up"></i></button>
+
+  <!-- Info modal (architecture / guide / FAQ) -->
+  <div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="infoModalTitle"></h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="infoModalBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Templates for the info modal -->
+  <template id="tpl-architecture">
+    <p>DocuGenius is a FastAPI service that wraps a Retrieval-Augmented Generation pipeline and several NLP tools behind one REST API. This single-page UI talks to that API.</p>
+    <div class="row g-3 my-2">
+      <div class="col-md-6"><a href="assets/images/architecture-overview.png" target="_blank" rel="noopener"><img class="img-fluid rounded border arch-img" src="assets/images/architecture-overview.png" alt="Request flow from input type through processing to output" loading="lazy" /></a></div>
+      <div class="col-md-6"><a href="assets/images/architecture-detailed.png" target="_blank" rel="noopener"><img class="img-fluid rounded border arch-img" src="assets/images/architecture-detailed.png" alt="Layered architecture: input layer, processing core, output layer and support systems" loading="lazy" /></a></div>
+    </div>
+    <ul>
+      <li><strong>Ingestion:</strong> pypdf extracts text page by page. LangChain's recursive splitter creates overlapping chunks.</li>
+      <li><strong>Embeddings:</strong> <code>all-MiniLM-L6-v2</code> (Sentence-Transformers) runs locally and maps each chunk to a 384-dimensional vector.</li>
+      <li><strong>Vector store:</strong> each document gets its own persistent ChromaDB collection, searched by cosine similarity.</li>
+      <li><strong>Generation:</strong> Google Gemini answers only from the retrieved context and cites page numbers. If a model is rate-limited or retired, the next one in the fallback list is used.</li>
+      <li><strong>NLP tools:</strong> TextBlob sentiment, SpeechRecognition, pdfplumber table detection, a rule-based style-transfer engine and geometric shape recognition.</li>
+    </ul>
+  </template>
+
+  <template id="tpl-guide">
+    <h3 class="h6">Getting started</h3>
+    <ol>
+      <li>Upload a text-based PDF. Indexing takes a few seconds; re-uploading the same file is instant.</li>
+      <li>Ask questions, summarize or extract tables. Answers cite the pages they came from.</li>
+      <li>Use the chat bubble for follow-up questions. It remembers the last few turns.</li>
+    </ol>
+    <h3 class="h6 mt-4">Tips</h3>
+    <ul>
+      <li>Specific questions retrieve better context: "What was the 2023 revenue?" works better than "Tell me about money".</li>
+      <li>Select any text in an answer to send it to the Ghostwriter.</li>
+      <li>Transcription accepts WAV everywhere. MP3, M4A, OGG and WEBM need FFmpeg on the server (included in the Docker image).</li>
+      <li>Reddit analysis needs Reddit API credentials on the server. Web search grounding needs a paid Gemini tier; otherwise answers come from the model's own knowledge.</li>
+    </ul>
+    <h3 class="h6 mt-4">Troubleshooting</h3>
+    <ul>
+      <li><strong>"No selectable text"</strong>: the PDF is scanned. Run it through OCR first.</li>
+      <li><strong>"Quota reached"</strong>: the free Gemini tier is rate-limited. Wait a minute and try again.</li>
+      <li><strong>"Gemini is not configured"</strong>: set <code>GOOGLE_API_KEY</code> in <code>.env</code> and restart the server.</li>
+    </ul>
+  </template>
+
+  <template id="tpl-faq">
+    <div class="accordion" id="faqAccordion">
+      <div class="accordion-item">
+        <h3 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">Which files are supported?</button></h3>
+        <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion"><div class="accordion-body">Text-based PDFs up to 20 MB by default (configurable with <code>MAX_UPLOAD_MB</code>). Scanned PDFs need OCR first.</div></div>
+      </div>
+      <div class="accordion-item">
+        <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">How are answers generated?</button></h3>
+        <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Your question is embedded and compared with every chunk of the document. The most relevant chunks are sent to Gemini, which is told to answer only from them and cite pages. This is Retrieval-Augmented Generation (RAG).</div></div>
+      </div>
+      <div class="accordion-item">
+        <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">Where is my data stored?</button></h3>
+        <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Uploaded PDFs and their vector indexes are stored on the server's disk under <code>DATA_DIR</code> (a temp folder by default). Text sent to Gemini is processed by Google under its API terms. Self-host DocuGenius if your documents are sensitive.</div></div>
+      </div>
+      <div class="accordion-item">
+        <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">Does it work without an API key?</button></h3>
+        <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Partly. Upload, table extraction, transcription, the offline Ghostwriter engine and the sketch assistant work without a key. Q&amp;A, summaries, chat, translation and search need a free Gemini key from Google AI Studio.</div></div>
+      </div>
+      <div class="accordion-item">
+        <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">Can I use it in my own project?</button></h3>
+        <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Yes. DocuGenius is open source under the MIT License, and the whole UI runs on a documented REST API (see <a href="/docs" target="_blank" rel="noopener">/docs</a>).</div></div>
+      </div>
+    </div>
+  </template>
+
+  <div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie_light.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
