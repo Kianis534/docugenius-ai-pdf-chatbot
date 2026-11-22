@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+
 from conftest import REPORT_PAGES, make_blank_pdf, make_pdf
 
 from docugenius.errors import LLMQuotaError
@@ -109,3 +111,31 @@ def test_llm_not_configured_returns_503(client, uploaded, fake_llm):
     response = client.post(f"/api/documents/{uploaded['doc_id']}/summary")
     assert response.status_code == 503
     assert "GOOGLE_API_KEY" in response.json()["detail"]
+
+
+def test_unreadable_table_layout_returns_friendly_error(client, uploaded, monkeypatch, settings):
+    import pdfplumber
+
+    def broken_open(*args, **kwargs):
+        raise ValueError("unexpected layout")
+
+    monkeypatch.setattr(pdfplumber, "open", broken_open)
+    response = client.get(f"/api/documents/{uploaded['doc_id']}/tables")
+    assert response.status_code == 422
+    assert "Tables could not be read" in response.json()["detail"]
+    # A failure must not be cached: the next call can still succeed.
+    assert not (settings.documents_dir / uploaded["doc_id"] / "tables.json").exists()
+
+
+def test_page_count_includes_pages_without_text(client):
+    from pypdf import PdfReader, PdfWriter
+
+    text_pdf = make_pdf(["Only the first page has text."])
+    writer = PdfWriter()
+    writer.append(PdfReader(io.BytesIO(text_pdf)))
+    writer.add_blank_page(width=595, height=842)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    response = client.post("/api/documents", files={"file": ("mixed.pdf", buffer.getvalue(), "application/pdf")})
+    assert response.status_code == 201
+    assert response.json()["pages"] == 2
