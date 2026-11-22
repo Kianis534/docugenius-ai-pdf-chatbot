@@ -70,7 +70,7 @@ It started as my semester project for a Natural Language Processing course. Sinc
 ### Engineering
 - Clean, layered **FastAPI** backend: routes, Pydantic schemas, framework-agnostic services, typed domain errors.
 - **Interactive OpenAPI docs** at `/docs`, with request and response models for every endpoint.
-- **91 automated tests** that run offline in seconds (Gemini, Reddit and speech are faked), plus Ruff linting and formatting, enforced in **GitHub Actions**.
+- **96 automated tests** that run offline in seconds (Gemini, Reddit and speech are faked), plus Ruff linting and formatting, enforced in **GitHub Actions**.
 - **Production Docker image**: multi-stage build, CPU-only PyTorch, non-root user, embedding model baked in, healthcheck.
 - **Secure by default**: no secrets in code, all rendered output escaped or sanitized (XSS-safe), only the frontend assets folder is served, uploads are size- and type-validated.
 - **Accessible, responsive UI** with dark mode, keyboard shortcuts and no build step.
@@ -409,7 +409,7 @@ docugenius-ai-pdf-chatbot/
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                    # 91 tests, fully offline, well under a minute
+pytest                    # 96 tests, fully offline, well under a minute
 ruff check .              # lint
 ruff format --check .     # formatting
 ```

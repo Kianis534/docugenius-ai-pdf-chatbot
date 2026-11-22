@@ -199,3 +199,20 @@ def test_sketch_enhance(client):
 
 def test_sketch_requires_strokes(client):
     assert client.post("/api/sketch/enhance", json={"strokes": []}).status_code == 422
+
+
+def test_health_exposes_upload_limits(client):
+    limits = client.get("/health").json()["limits"]
+    assert limits == {"max_upload_mb": 2, "max_audio_mb": 25}
+
+
+def test_security_headers_are_set(client):
+    for path in ("/", "/health", "/assets/js/app.js"):
+        headers = client.get(path).headers
+        assert headers["x-content-type-options"] == "nosniff", path
+        assert headers["referrer-policy"] == "strict-origin-when-cross-origin", path
+
+
+def test_index_supports_head_requests(client):
+    # Uptime monitors and link-preview bots often probe with HEAD.
+    assert client.head("/").status_code == 200
