@@ -199,12 +199,19 @@
     messages.scrollTop = messages.scrollHeight;
   }
 
+  // Citations: pages for PDFs, sections for Word, text and Markdown documents.
+  const locationLabel = (source) => (source.page ? `p. ${source.page}` : source.section ? `§ ${source.section}` : "excerpt");
+
+  function citationSummary(sources) {
+    return [...new Set((sources || []).filter((s) => s.page || s.section).map(locationLabel))].join(", ");
+  }
+
   function sourcesHtml(sources) {
     if (!sources || !sources.length) return "";
-    const pages = [...new Set(sources.map((s) => s.page).filter(Boolean))].sort((a, b) => a - b);
-    const label = pages.length ? `Sources · page${pages.length > 1 ? "s" : ""} ${pages.join(", ")}` : "Sources";
+    const cited = citationSummary(sources);
+    const label = cited ? `Sources · ${cited}` : "Sources";
     const items = sources
-      .map((s) => `<div class="source-item"><span class="page-chip">p. ${escapeHtml(s.page ?? "?")}</span>${escapeHtml(s.snippet)}</div>`)
+      .map((s) => `<div class="source-item"><span class="page-chip">${escapeHtml(locationLabel(s))}</span>${escapeHtml(s.snippet)}</div>`)
       .join("");
     return `<details class="sources"><summary>${escapeHtml(label)}</summary>${items}</details>`;
   }
@@ -264,7 +271,17 @@
   // ------------------------------------------------------------------------
   // Documents
   // ------------------------------------------------------------------------
-  const uploadHint = () => `Text-based PDFs up to ${state.maxUploadMb} MB`;
+  const uploadHint = () => `PDF, DOCX, TXT or MD up to ${state.maxUploadMb} MB`;
+  const SUPPORTED_FILE = /\.(pdf|docx|txt|md|markdown)$/i;
+
+  function clearDocumentOutputs() {
+    ["#askOutput", "#summaryOutput", "#tablesOutput"].forEach((selector) => {
+      const output = $(selector);
+      output.innerHTML = "";
+      delete output.dataset.raw;
+    });
+    state.tables = [];
+  }
 
   function setDocument(doc) {
     const switched = Boolean(state.doc) && state.doc.doc_id !== doc.doc_id;
@@ -274,21 +291,20 @@
     }
     if (switched) {
       // Answers about the previous document must not linger next to the new one.
-      ["#askOutput", "#summaryOutput", "#tablesOutput"].forEach((selector) => {
-        const output = $(selector);
-        output.innerHTML = "";
-        delete output.dataset.raw;
-      });
+      clearDocumentOutputs();
       addChatNote(`Switched to “${doc.filename}”. I'll answer from this document now.`);
     }
     state.doc = doc;
     storage.set(STORAGE_KEYS.doc, JSON.stringify(doc));
     const badge = $("#docBadge");
+    const unit = !doc.kind || doc.kind === "pdf" ? "page" : "section";
     badge.innerHTML = `<i class="bi bi-check-circle-fill"></i><span class="doc-name">${escapeHtml(doc.filename)}</span>
-      <span>${doc.pages} page${doc.pages === 1 ? "" : "s"} · ${doc.chunks} chunks</span>`;
+      <span>${doc.pages} ${unit}${doc.pages === 1 ? "" : "s"} · ${doc.chunks} chunk${doc.chunks === 1 ? "" : "s"}</span>
+      <button type="button" class="doc-remove" id="removeDocBtn" title="Remove this document from the server"
+              aria-label="Remove document"><i class="bi bi-x-lg"></i></button>`;
     badge.title = doc.filename;
     badge.classList.remove("d-none");
-    $("#dropzoneHint").textContent = "Drop another PDF to switch documents";
+    $("#dropzoneHint").textContent = "Drop another file to switch documents";
     $("#chatMode").textContent = `Answering from ${doc.filename}`;
   }
 
@@ -302,7 +318,7 @@
 
   function requireDocument() {
     if (state.doc) return true;
-    toast("Upload a PDF first.", "warning");
+    toast("Upload a document first.", "warning");
     $("#dropzone").scrollIntoView({ behavior: "smooth", block: "center" });
     return false;
   }
@@ -314,9 +330,10 @@
     }
   }
 
-  async function uploadPdf(file) {
-    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
-      toast("Please choose a PDF file.", "warning");
+  async function uploadDocument(file) {
+    if (!SUPPORTED_FILE.test(file.name) && file.type !== "application/pdf") {
+      toast("Please choose a PDF, Word (.docx), text (.txt) or Markdown (.md) file.", "warning");
+      $("#pdfUpload").value = "";
       return;
     }
     if (file.size > state.maxUploadMb * 1024 * 1024) {
@@ -342,6 +359,27 @@
     }
   }
 
+  async function removeDocument() {
+    if (!state.doc) return;
+    const { doc_id: docId, filename } = state.doc;
+    if (!window.confirm(`Remove “${filename}” and its search index from the server?`)) return;
+    try {
+      await api(`/api/documents/${encodeURIComponent(docId)}`, { method: "DELETE", timeout: 30_000 });
+      clearDocumentOutputs();
+      clearDocument();
+      state.chatHistory = [];
+      addChatNote(`Removed “${filename}” from the server.`);
+      toast("Document removed");
+    } catch (error) {
+      if (error.status === 404) {
+        clearDocument();
+        toast("That document was already removed.", "warning");
+      } else {
+        toast(error.message, "danger");
+      }
+    }
+  }
+
   async function restoreDocument() {
     const saved = storage.get(STORAGE_KEYS.doc);
     if (!saved) return;
@@ -356,14 +394,17 @@
   function initUpload() {
     const input = $("#pdfUpload");
     const zone = $("#dropzone");
-    input.addEventListener("change", () => input.files[0] && uploadPdf(input.files[0]));
+    input.addEventListener("change", () => input.files[0] && uploadDocument(input.files[0]));
+    $("#docBadge").addEventListener("click", (event) => {
+      if (event.target.closest("#removeDocBtn")) removeDocument();
+    });
     ["dragenter", "dragover"].forEach((type) =>
       zone.addEventListener(type, (event) => { event.preventDefault(); zone.classList.add("dragover"); }));
     ["dragleave", "drop"].forEach((type) =>
       zone.addEventListener(type, (event) => { event.preventDefault(); zone.classList.remove("dragover"); }));
     zone.addEventListener("drop", (event) => {
       const file = event.dataTransfer.files[0];
-      if (file) uploadPdf(file);
+      if (file) uploadDocument(file);
     });
     restoreDocument();
   }
@@ -418,7 +459,7 @@
             const [header, ...rows] = table.rows;
             return `<div class="table-block">
               <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="page-chip">Table ${index + 1} · p. ${table.page}</span>
+                <span class="page-chip">Table ${index + 1}${table.page ? ` · p. ${table.page}` : ""}</span>
                 <button type="button" class="btn btn-sm btn-link p-0" data-copy-table="${index}">Copy as Markdown</button>
               </div>
               <div class="table-responsive"><table class="table table-sm table-bordered align-middle">
@@ -820,9 +861,9 @@
           method: "POST",
           json: { message, doc_id: state.doc ? state.doc.doc_id : null, history: state.chatHistory.slice(-MAX_CHAT_HISTORY) },
         });
-        const pages = [...new Set((result.sources || []).map((s) => s.page).filter(Boolean))].sort((a, b) => a - b);
+        const cited = citationSummary(result.sources);
         typing.innerHTML = renderMarkdown(result.reply)
-          + (pages.length ? `<div class="chat-sources">Sources: p. ${pages.join(", ")}</div>` : "");
+          + (cited ? `<div class="chat-sources">Sources: ${escapeHtml(cited)}</div>` : "");
         state.chatHistory.push({ role: "user", content: message.slice(0, 4000) }, { role: "assistant", content: result.reply.slice(0, 4000) });
         state.chatHistory = state.chatHistory.slice(-MAX_CHAT_HISTORY * 2);
       } catch (error) {
