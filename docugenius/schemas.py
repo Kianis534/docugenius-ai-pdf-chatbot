@@ -14,7 +14,8 @@ def _text(min_length: int, max_length: int) -> Any:
 
 # --- Shared ---------------------------------------------------------------- #
 class SourceOut(BaseModel):
-    page: int | None = None
+    page: int | None = Field(default=None, description="Page number (PDF documents).")
+    section: int | None = Field(default=None, description="Section number (Word, text and Markdown documents).")
     snippet: str
 
 
@@ -31,7 +32,8 @@ class ErrorOut(BaseModel):
 class DocumentOut(BaseModel):
     doc_id: str
     filename: str
-    pages: int
+    kind: Literal["pdf", "docx", "text"] = Field(description="Detected document format.")
+    pages: int = Field(description="Pages for PDFs; sections of roughly one page for other formats.")
     chunks: int
     created_at: str
 
@@ -52,7 +54,7 @@ class SummaryOut(BaseModel):
 
 
 class TableOut(BaseModel):
-    page: int
+    page: int | None = Field(default=None, description="Page number for PDFs; null for other formats.")
     rows: list[list[str]]
     markdown: str
 

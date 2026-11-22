@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Path, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Path, Request, Response, UploadFile
 
 from docugenius import __version__
 from docugenius.errors import PayloadTooLargeError, RedditError
@@ -93,9 +93,12 @@ def health(services: ServicesDep) -> HealthOut:
 # Documents (RAG)
 # --------------------------------------------------------------------------- #
 @api.post(
-    "/documents", response_model=DocumentOut, status_code=201, tags=["Documents"], summary="Upload and index a PDF"
+    "/documents", response_model=DocumentOut, status_code=201, tags=["Documents"], summary="Upload and index a document"
 )
-def upload_document(services: ServicesDep, file: Annotated[UploadFile, File(description="PDF file")]) -> DocumentOut:
+def upload_document(
+    services: ServicesDep,
+    file: Annotated[UploadFile, File(description="PDF, Word (.docx), text (.txt) or Markdown (.md) file")],
+) -> DocumentOut:
     data = _read_upload(file, services.settings.max_upload_bytes)
     return DocumentOut(**asdict(services.documents.ingest(data, file.filename)))
 
@@ -103,6 +106,18 @@ def upload_document(services: ServicesDep, file: Annotated[UploadFile, File(desc
 @api.get("/documents/{doc_id}", response_model=DocumentOut, tags=["Documents"], summary="Get document metadata")
 def get_document(services: ServicesDep, doc_id: DocIdPath) -> DocumentOut:
     return DocumentOut(**asdict(services.documents.get(doc_id)))
+
+
+@api.delete(
+    "/documents/{doc_id}",
+    status_code=204,
+    response_class=Response,
+    tags=["Documents"],
+    summary="Delete a document, its vector index and cached results",
+)
+def delete_document(services: ServicesDep, doc_id: DocIdPath) -> Response:
+    services.documents.delete(doc_id)
+    return Response(status_code=204)
 
 
 @api.post(

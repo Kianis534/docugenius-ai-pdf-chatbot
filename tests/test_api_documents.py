@@ -30,10 +30,13 @@ def test_get_document_metadata(client, uploaded):
     assert response.json() == uploaded
 
 
-def test_rejects_non_pdf(client):
-    response = client.post("/api/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
-    assert response.status_code == 422
-    assert "PDF" in response.json()["detail"]
+def test_rejects_unsupported_file_types(client):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    legacy_doc = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 32
+    for name, payload in (("image.png", png), ("report.doc", legacy_doc), ("notes.csv", b"a,b\n1,2")):
+        response = client.post("/api/documents", files={"file": (name, payload, "application/octet-stream")})
+        assert response.status_code == 422, name
+        assert "Unsupported file type" in response.json()["detail"]
 
 
 def test_rejects_pdf_without_text(client):

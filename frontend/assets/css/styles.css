@@ -104,6 +104,8 @@ body {
 .dropzone-hint { font-size: .85rem; color: var(--dg-text-muted); }
 .doc-badge { display: inline-flex; align-items: center; gap: .5rem; padding: .35rem .75rem; border-radius: 999px; font-size: .85rem; background: rgba(34, 197, 94, .12); color: #15803d; border: 1px solid rgba(34, 197, 94, .3); max-width: 100%; }
 [data-bs-theme="dark"] .doc-badge { color: #86efac; }
+.doc-remove { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: .15rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: .7rem; opacity: .75; }
+.doc-remove:hover, .doc-remove:focus-visible { opacity: 1; background: rgba(239, 68, 68, .15); color: #dc2626; }
 .doc-badge .doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
 
 /* ---------- Output panels ---------- */
