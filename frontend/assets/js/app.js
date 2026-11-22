@@ -20,7 +20,7 @@
   const MAX_CHAT_HISTORY = 8;
   const GHOST_LIMIT = 5000;
 
-  const state = { doc: null, chatHistory: [], tables: [], lastCapture: "" };
+  const state = { doc: null, chatHistory: [], tables: [], lastCapture: "", maxUploadMb: 20 };
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -189,6 +189,16 @@
     if (tableButton) copyText(state.tables[Number(tableButton.dataset.copyTable)]?.markdown || "");
   });
 
+  function addChatNote(text) {
+    const messages = $("#chatMessages");
+    if (!messages) return;
+    const note = document.createElement("div");
+    note.className = "chat-message bot chat-note";
+    note.textContent = text;
+    messages.appendChild(note);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
   function sourcesHtml(sources) {
     if (!sources || !sources.length) return "";
     const pages = [...new Set(sources.map((s) => s.page).filter(Boolean))].sort((a, b) => a - b);
@@ -229,6 +239,10 @@
     try {
       const health = await api("/health", { timeout: 10_000 });
       $("#appVersion").textContent = health.version;
+      if (health.limits && health.limits.max_upload_mb) {
+        state.maxUploadMb = health.limits.max_upload_mb;
+        if (!state.doc) $("#dropzoneHint").textContent = uploadHint();
+      }
       const gemini = health.services.gemini;
       if (gemini.configured) {
         badge.classList.add("ok");
@@ -250,10 +264,24 @@
   // ------------------------------------------------------------------------
   // Documents
   // ------------------------------------------------------------------------
+  const uploadHint = () => `Text-based PDFs up to ${state.maxUploadMb} MB`;
+
   function setDocument(doc) {
+    const switched = Boolean(state.doc) && state.doc.doc_id !== doc.doc_id;
+    if (!state.doc || switched) {
+      state.chatHistory = [];
+      state.tables = [];
+    }
+    if (switched) {
+      // Answers about the previous document must not linger next to the new one.
+      ["#askOutput", "#summaryOutput", "#tablesOutput"].forEach((selector) => {
+        const output = $(selector);
+        output.innerHTML = "";
+        delete output.dataset.raw;
+      });
+      addChatNote(`Switched to “${doc.filename}”. I'll answer from this document now.`);
+    }
     state.doc = doc;
-    state.chatHistory = [];
-    state.tables = [];
     storage.set(STORAGE_KEYS.doc, JSON.stringify(doc));
     const badge = $("#docBadge");
     badge.innerHTML = `<i class="bi bi-check-circle-fill"></i><span class="doc-name">${escapeHtml(doc.filename)}</span>
@@ -268,7 +296,7 @@
     state.doc = null;
     storage.remove(STORAGE_KEYS.doc);
     $("#docBadge").classList.add("d-none");
-    $("#dropzoneHint").textContent = "Text-based PDFs up to 20 MB";
+    $("#dropzoneHint").textContent = uploadHint();
     $("#chatMode").textContent = "General assistant";
   }
 
@@ -289,6 +317,11 @@
   async function uploadPdf(file) {
     if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
       toast("Please choose a PDF file.", "warning");
+      return;
+    }
+    if (file.size > state.maxUploadMb * 1024 * 1024) {
+      toast(`“${file.name}” is ${(file.size / 1048576).toFixed(1)} MB. The limit is ${state.maxUploadMb} MB.`, "warning");
+      $("#pdfUpload").value = "";
       return;
     }
     const progress = $("#uploadProgress");
@@ -648,6 +681,7 @@
     }
 
     canvas.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return; // ignore right/middle clicks
       canvas.setPointerCapture(event.pointerId);
       const point = pointFrom(event);
       current = {

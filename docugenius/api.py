@@ -82,6 +82,10 @@ def health(services: ServicesDep) -> HealthOut:
             "documents": {"indexed": services.documents.count()},
             "speech": {"ffmpeg": services.transcriber.ffmpeg_available()},
         },
+        limits={
+            "max_upload_mb": services.settings.max_upload_mb,
+            "max_audio_mb": MAX_AUDIO_BYTES // (1024 * 1024),
+        },
     )
 
 
