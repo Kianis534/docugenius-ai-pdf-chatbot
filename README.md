@@ -2,7 +2,7 @@
 
 # DocuGenius: AI PDF Chatbot & NLP Document Assistant
 
-**Chat with your PDFs and get answers that cite their pages, using Retrieval-Augmented Generation (RAG) with LangChain, ChromaDB, Sentence-Transformers and Google Gemini on FastAPI.**
+**Chat with your PDFs, Word documents, text and Markdown files and get answers that cite their sources, using Retrieval-Augmented Generation (RAG) with LangChain, ChromaDB, Sentence-Transformers and Google Gemini on FastAPI.**
 
 [![CI](https://github.com/Kianis534/docugenius-ai-pdf-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/Kianis534/docugenius-ai-pdf-chatbot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)
@@ -20,7 +20,7 @@
 
 ---
 
-DocuGenius turns any text-based PDF into something you can talk to. Upload a report, paper, contract or manual, then ask questions in plain language. The answers come only from your document and cite the pages they're based on. Around that core RAG pipeline sit a set of practical NLP tools: summarization, table extraction, translation, speech-to-text, writing-style transfer, Reddit sentiment analysis and a shape-recognizing sketch pad. All of them are served by one documented REST API and a lightweight web UI.
+DocuGenius turns your documents into something you can talk to. Upload a report, paper, contract or manual as a PDF, Word (.docx), text or Markdown file, then ask questions in plain language. The answers come only from your document and cite the pages or sections they're based on. Around that core RAG pipeline sit a set of practical NLP tools: summarization, table extraction, translation, speech-to-text, writing-style transfer, Reddit sentiment analysis and a shape-recognizing sketch pad. All of them are served by one documented REST API and a lightweight web UI.
 
 It started as my semester project for a Natural Language Processing course. Since then I've rebuilt it into a modular, tested, containerized application.
 
@@ -49,11 +49,12 @@ It started as my semester project for a Natural Language Processing course. Sinc
 ## Features
 
 ### Document intelligence (RAG)
-- **Chat with PDF**: ask natural-language questions and get answers grounded in the document, with **page citations** and the matching passages.
+- **Chat with PDF, Word, TXT and Markdown**: ask natural-language questions and get answers grounded in the document, with **page citations** (or section citations for non-PDF files) and the matching passages.
 - **Semantic search**: local `all-MiniLM-L6-v2` embeddings and a persistent **ChromaDB** index per document (cosine similarity).
 - **Whole-document summaries**: chunks are sampled evenly from start to finish, so long files are summarized end to end, not just the first pages.
-- **Table extraction**: ruled tables are detected with **pdfplumber** and shown as HTML, with one-click copy as Markdown.
+- **Table extraction**: ruled PDF tables are detected with **pdfplumber**, Word tables are read natively and Markdown pipe tables are parsed. All are shown as HTML, with one-click copy as Markdown.
 - **Instant re-uploads**: documents are content-addressed by SHA-256, so the same file is never indexed twice.
+- **You control your data**: remove a document, its vector index and cached results from the server with one click (or `DELETE /api/documents/{id}`).
 
 ### AI assistant
 - **Multi-turn chat widget** that remembers the conversation and switches to document mode automatically once a PDF is loaded.
@@ -70,7 +71,7 @@ It started as my semester project for a Natural Language Processing course. Sinc
 ### Engineering
 - Clean, layered **FastAPI** backend: routes, Pydantic schemas, framework-agnostic services, typed domain errors.
 - **Interactive OpenAPI docs** at `/docs`, with request and response models for every endpoint.
-- **96 automated tests** that run offline in seconds (Gemini, Reddit and speech are faked), plus Ruff linting and formatting, enforced in **GitHub Actions**.
+- **109 automated tests** that run offline in seconds (Gemini, Reddit and speech are faked), plus Ruff linting and formatting, enforced in **GitHub Actions**.
 - **Production Docker image**: multi-stage build, CPU-only PyTorch, non-root user, embedding model baked in, healthcheck.
 - **Secure by default**: no secrets in code, all rendered output escaped or sanitized (XSS-safe), only the frontend assets folder is served, uploads are size- and type-validated.
 - **Accessible, responsive UI** with dark mode, keyboard shortcuts and no build step.
@@ -139,7 +140,7 @@ sequenceDiagram
     A-->>U: answer + sources [{page, snippet}]
 ```
 
-1. **Extraction**: `pypdf` reads text page by page and keeps the page number as metadata. Encrypted, corrupted and scanned (image-only) PDFs are detected and rejected with a helpful message.
+1. **Extraction**: `pypdf` reads PDFs page by page and keeps the page number as metadata. Word files are read with `python-docx` (paragraphs and tables), and text or Markdown files are decoded directly (UTF-8, UTF-16 or Windows-1252). Non-PDF text is grouped into numbered sections of roughly one page, which become the citation unit. Encrypted, corrupted, scanned (image-only) and unsupported files are rejected with a helpful message.
 2. **Chunking**: LangChain's `RecursiveCharacterTextSplitter` makes overlapping chunks, so sentences at chunk edges aren't lost.
 3. **Embedding**: `sentence-transformers/all-MiniLM-L6-v2` turns each chunk into a normalized 384-dimensional vector. It runs locally, so no embedding API is needed.
 4. **Indexing**: each document gets its own persistent Chroma collection under `DATA_DIR/documents/<doc_id>/`.
@@ -153,7 +154,7 @@ sequenceDiagram
 | API | FastAPI, Uvicorn, Pydantic v2, pydantic-settings |
 | LLM | Google Gemini via the `google-genai` SDK (default `gemini-3.8-flash`, with fallbacks) |
 | RAG | LangChain (core, text-splitters, Chroma, Hugging Face integrations), ChromaDB, Sentence-Transformers |
-| Documents | pypdf, pdfplumber |
+| Documents | pypdf, pdfplumber, python-docx |
 | NLP and audio | TextBlob, SpeechRecognition, pydub/FFmpeg |
 | Social and charts | PRAW (Reddit API), Matplotlib |
 | Frontend | HTML5, Bootstrap 5.3 (colour modes), vanilla JavaScript, marked + DOMPurify, Lottie |
@@ -272,10 +273,11 @@ All settings are environment variables. A local `.env` file is loaded automatica
 
 | Tool | How to use it | Needs Gemini key |
 | --- | --- | :---: |
-| **Upload** | Drag a PDF onto the drop zone or click *browse*. The badge shows pages and chunks once it's indexed. | No |
-| **Ask your document** | Type a question and press *Ask*. Expand *Sources* to see the exact passages and pages. | Yes |
+| **Upload** | Drag a PDF, Word (.docx), text or Markdown file onto the drop zone or click *browse*. The badge shows pages (or sections) and chunks once it's indexed. | No |
+| **Remove** | Click the × next to the document name to delete it, its index and cached results from the server. | No |
+| **Ask your document** | Type a question and press *Ask*. Expand *Sources* to see the exact passages and their pages or sections. | Yes |
 | **Summarize** | One click gives an overview, key points and a takeaway for the whole document. | Yes |
-| **Extract tables** | Finds ruled tables on up to 100 pages. Use *Copy as Markdown* to paste them anywhere. | No |
+| **Extract tables** | Finds ruled PDF tables (up to 100 pages), Word tables and Markdown pipe tables. Use *Copy as Markdown* to paste them anywhere. | No |
 | **Ghostwriter** | Paste text (or select text in any answer to send it here), pick a style and an engine (*Auto*, *Gemini* or *Offline*). | Optional |
 | **Translate** | Enter text and any target language, e.g. *Urdu*, *Arabic*, *Spanish*. | Yes |
 | **Transcribe audio** | Upload a recording (up to 5 minutes) and pick the spoken language. | No |
@@ -293,8 +295,9 @@ Every UI feature is available over HTTP. Full schemas, examples and a *Try it ou
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Service status, configured models, request counters |
-| `POST` | `/api/documents` | Upload and index a PDF (`multipart/form-data`, field `file`) |
-| `GET` | `/api/documents/{doc_id}` | Document metadata |
+| `POST` | `/api/documents` | Upload and index a PDF, DOCX, TXT or Markdown file (`multipart/form-data`, field `file`) |
+| `GET` | `/api/documents/{doc_id}` | Document metadata (format, pages or sections, chunks) |
+| `DELETE` | `/api/documents/{doc_id}` | Delete a document, its vector index and cached results |
 | `POST` | `/api/documents/{doc_id}/query` | RAG question answering with page sources |
 | `POST` | `/api/documents/{doc_id}/summary` | Whole-document summary |
 | `GET` | `/api/documents/{doc_id}/tables` | Extracted tables (rows and Markdown) |
@@ -386,7 +389,7 @@ docugenius-ai-pdf-chatbot/
 │   ├── errors.py                # Domain errors -> HTTP status codes
 │   └── services/
 │       ├── llm.py               # Gemini client: fallback, cooldowns, budget, grounding
-│       ├── documents.py         # PDF ingestion, RAG Q&A, summaries, table extraction
+│       ├── documents.py         # PDF/DOCX/TXT/MD ingestion, RAG Q&A, summaries, tables, deletion
 │       ├── assistant.py         # Chat, translation, web search
 │       ├── ghostwriter.py       # Style transfer: Gemini + offline rule-based engine
 │       ├── speech.py            # Speech-to-text
@@ -409,7 +412,7 @@ docugenius-ai-pdf-chatbot/
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                    # 96 tests, fully offline, well under a minute
+pytest                    # 109 tests, fully offline, well under a minute
 ruff check .              # lint
 ruff format --check .     # formatting
 ```
@@ -481,7 +484,8 @@ All LLM calls go through `docugenius/services/llm.py`. Implement the same `gener
 
 ## Roadmap
 
-- [ ] DOCX, PPTX, TXT and Markdown ingestion
+- [x] DOCX, TXT and Markdown ingestion
+- [ ] PPTX and HTML ingestion
 - [ ] OCR for scanned PDFs (Tesseract / `ocrmypdf`)
 - [ ] Multi-document collections and cross-document Q&A
 - [ ] Streaming responses (server-sent events)
