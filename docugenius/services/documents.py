@@ -133,7 +133,7 @@ class DocumentStore:
                 logger.info("Document %s already indexed, reusing it", doc_id)
                 return replace(existing, filename=filename)
 
-            pages = self._extract_pages(data)
+            pages, page_count = self._extract_pages(data)
             if not pages:
                 raise InvalidDocumentError(
                     "No selectable text was found in this PDF. Scanned documents need OCR before upload."
@@ -168,7 +168,7 @@ class DocumentStore:
                 info = DocumentInfo(
                     doc_id=doc_id,
                     filename=filename,
-                    pages=self._page_count(data),
+                    pages=page_count,
                     chunks=len(chunks),
                     created_at=datetime.now(UTC).isoformat(timespec="seconds"),
                 )
@@ -231,16 +231,20 @@ class DocumentStore:
         import pdfplumber
 
         tables: list[ExtractedTable] = []
-        with pdfplumber.open(doc_dir / "source.pdf") as pdf:
-            for number, page in enumerate(pdf.pages[:MAX_TABLE_PAGES], start=1):
-                for raw in page.extract_tables():
-                    rows = [
-                        [_clean_cell(cell) for cell in row]
-                        for row in raw
-                        if row and any(cell not in (None, "") for cell in row)
-                    ]
-                    if len(rows) >= 2 and max(len(r) for r in rows) >= 2:
-                        tables.append(ExtractedTable(page=number, rows=rows, markdown=_to_markdown(rows)))
+        try:
+            with pdfplumber.open(doc_dir / "source.pdf") as pdf:
+                for number, page in enumerate(pdf.pages[:MAX_TABLE_PAGES], start=1):
+                    for raw in page.extract_tables():
+                        rows = [
+                            [_clean_cell(cell) for cell in row]
+                            for row in raw
+                            if row and any(cell not in (None, "") for cell in row)
+                        ]
+                        if len(rows) >= 2 and max(len(r) for r in rows) >= 2:
+                            tables.append(ExtractedTable(page=number, rows=rows, markdown=_to_markdown(rows)))
+        except Exception as exc:  # malformed layouts can break pdfplumber's parser
+            logger.warning("Table extraction failed for %s: %s", doc_id, exc)
+            raise InvalidDocumentError("Tables could not be read from this PDF's layout.") from exc
 
         cache.write_text(json.dumps([asdict(t) for t in tables]), encoding="utf-8")
         return tables
@@ -296,7 +300,8 @@ class DocumentStore:
         except (PdfReadError, ValueError, OSError) as exc:
             raise InvalidDocumentError("The PDF appears to be corrupted and could not be read.") from exc
 
-    def _extract_pages(self, data: bytes) -> list[tuple[int, str]]:
+    def _extract_pages(self, data: bytes) -> tuple[list[tuple[int, str]], int]:
+        """Return the non-empty page texts and the total page count from a single parse."""
         reader = self._open_pdf(data)
         pages: list[tuple[int, str]] = []
         for number, page in enumerate(reader.pages, start=1):
@@ -308,10 +313,7 @@ class DocumentStore:
             text = re.sub(r"[ \t]+", " ", text).strip()
             if text:
                 pages.append((number, text))
-        return pages
-
-    def _page_count(self, data: bytes) -> int:
-        return len(self._open_pdf(data).pages)
+        return pages, len(reader.pages)
 
 
 def _snippet(text: str, limit: int = 240) -> str:

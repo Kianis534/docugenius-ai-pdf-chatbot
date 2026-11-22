@@ -191,3 +191,4 @@ class HealthOut(BaseModel):
     status: Literal["ok"]
     version: str
     services: dict[str, dict[str, Any]]
+    limits: dict[str, int] = Field(default_factory=dict, description="Upload size limits in megabytes.")

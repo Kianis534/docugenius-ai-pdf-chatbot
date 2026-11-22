@@ -35,7 +35,7 @@ def configure_logging(level: str) -> None:
         format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    for noisy in ("httpx", "chromadb.telemetry", "sentence_transformers", "urllib3"):
+    for noisy in ("httpx", "httpx2", "google_genai", "chromadb.telemetry", "sentence_transformers", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -62,6 +62,14 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+        return response
+
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
@@ -77,7 +85,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     if FRONTEND_DIR.exists():
         app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 
-        @app.get("/", include_in_schema=False)
+        @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
         def index() -> FileResponse:
             return FileResponse(FRONTEND_DIR / "index.html")
 
