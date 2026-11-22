@@ -1,12 +1,12 @@
 [project]
 name = "docugenius"
 version = "2.0.0"
-description = "AI PDF chatbot and NLP document assistant: RAG with LangChain, ChromaDB and Google Gemini on FastAPI."
+description = "AI chatbot for PDF, Word and text documents: RAG with LangChain, ChromaDB and Google Gemini on FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Muhammad Abdullah Raja" }]
 requires-python = ">=3.11"
-keywords = ["rag", "chatbot", "pdf", "gemini", "langchain", "chromadb", "fastapi", "nlp", "llm"]
+keywords = ["rag", "chatbot", "pdf", "docx", "gemini", "langchain", "chromadb", "fastapi", "nlp", "llm"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Framework :: FastAPI",

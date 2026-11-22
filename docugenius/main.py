@@ -20,7 +20,8 @@ logger = logging.getLogger("docugenius")
 DESCRIPTION = """
 DocuGenius is an AI document assistant built on **Retrieval-Augmented Generation**.
 
-* **Documents** - upload a PDF, ask grounded questions with page citations, summarise it, extract tables
+* **Documents** - upload a PDF, Word, text or Markdown file, ask grounded questions with citations,
+  summarise it, extract tables, delete it
 * **Assistant** - multi-turn chat, translation and web search powered by Google Gemini
 * **Audio** - speech-to-text transcription
 * **Social** - Reddit sentiment analysis with charts and AI insights
@@ -58,7 +59,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
 
